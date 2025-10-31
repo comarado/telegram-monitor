@@ -1,3 +1,5 @@
+from keep_alive import keep_alive
+keep_alive()
 from telethon import TelegramClient, events
 from flask import Flask
 from threading import Thread
@@ -41,3 +43,4 @@ async def handler(event):
 print("🚀 Telegram монитор запущен…")
 client.start()
 client.run_until_disconnected()
+
