@@ -3,9 +3,9 @@ import asyncio
 from telethon import TelegramClient, events
 from flask import Flask
 from threading import Thread
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 
-load_dotenv()
+#load_dotenv()
 
 # Настройки из .env
 api_id = os.getenv('API_ID')
@@ -159,3 +159,4 @@ if __name__ == '__main__':
 
     # Запускаем Telethon
     asyncio.run(main())
+
