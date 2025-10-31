@@ -1,162 +1,170 @@
 import os
 import asyncio
-from telethon import TelegramClient, events
-from flask import Flask
-from threading import Thread
-#from dotenv import load_dotenv
+import re
+from datetime import datetime
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from dotenv import load_dotenv
 
-#load_dotenv()
+load_dotenv()
 
-# Настройки из .env
-api_id = os.getenv('API_ID')
-api_hash = os.getenv('API_HASH')
-phone = os.getenv('PHONE')
-target_channels = [ch.strip() for ch in os.getenv('TARGET_CHANNEL', '').split(',') if ch.strip()]
-my_channel = os.getenv('MY_CHANNEL')
-keywords = [kw.strip() for kw in os.getenv('KEYWORDS', '').split(',') if kw.strip()]
+class TelegramMonitor:
+    def __init__(self):
+        self.api_id = int(os.getenv('APL_ID'))
+        self.api_hash = os.getenv('APL_HASH')
+        self.session_string = os.getenv('SESSION_STRING')
+        self.target_channel = os.getenv('TARGET_CHANNEL')
+        self.my_channel = os.getenv('MY_CHANNEL')
+        self.keywords = os.getenv('KEYWORDS', '').split(',')
+        self.phone = os.getenv('PHONE')
+        
+        # Очищаем и форматируем ключевые слова
+        self.keywords = [kw.strip().lower() for kw in self.keywords if kw.strip()]
+        
+        print("🔧 Инициализация монитора...")
+        print(f"🎯 Целевой канал: {self.target_channel}")
+        print(f"📤 Мой канал: {self.my_channel}")
+        print(f"🔍 Ключевые слова: {', '.join(self.keywords)}")
+        print(f"📞 Телефон: {self.phone}")
 
-client = TelegramClient('session', api_id, api_hash)
+    async def start(self):
+        """Запуск мониторинга"""
+        try:
+            async with Client(
+                "monitor_session",
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                session_string=self.session_string,
+                phone_number=self.phone
+            ) as app:
+                print("✅ Клиент успешно инициализирован!")
+                
+                # Проверяем подключение к каналам
+                await self.check_channels(app)
+                
+                # Регистрируем обработчики
+                await self.setup_handlers(app)
+                
+                print("🚀 Мониторинг запущен! Ожидаем новые сообщения...")
+                print("=" * 60)
+                
+                # Бесконечный цикл для поддержания работы
+                await asyncio.Future()
+                
+        except Exception as e:
+            print(f"❌ Ошибка при запуске: {e}")
+            await asyncio.sleep(10)  # Ждем перед повторной попыткой
+            await self.start()  # Перезапускаем
 
-async def forward_complete_message(event):
-    """Пересылает полное сообщение с ссылкой и информацией об авторе"""
-    message = event.message
-    sender = await message.get_sender()
-    chat = await event.get_chat()
+    async def check_channels(self, app):
+        """Проверяем доступ к каналам"""
+        try:
+            # Проверяем целевой канал
+            target_chat = await app.get_chat(self.target_channel)
+            print(f"✅ Доступ к целевому каналу: {target_chat.title}")
+            
+            # Проверяем свой канал (если указан)
+            if self.my_channel:
+                my_chat = await app.get_chat(self.my_channel)
+                print(f"✅ Доступ к моему каналу: {my_chat.title}")
+                
+        except Exception as e:
+            print(f"❌ Ошибка доступа к каналу: {e}")
+            raise
 
-    # Получаем информацию об авторе
-    if sender:
-        if hasattr(sender, 'username') and sender.username:
-            author_info = f"👤 {sender.first_name or ''} {sender.last_name or ''} (@{sender.username})"
+    async def setup_handlers(self, app):
+        """Настраиваем обработчики сообщений"""
+        
+        @app.on_message(filters.chat(self.target_channel) & filters.incoming)
+        async def monitor_messages(client, message: Message):
+            """Обработчик новых сообщений в целевом канале"""
+            try:
+                await self.process_message(message)
+            except Exception as e:
+                print(f"❌ Ошибка обработки сообщения: {e}")
+
+    async def process_message(self, message: Message):
+        """Обрабатываем сообщение и проверяем на ключевые слова"""
+        # Получаем текст сообщения
+        text = self.extract_message_text(message)
+        
+        if not text:
+            return
+            
+        # Проверяем на ключевые слова
+        found_keywords = self.check_keywords(text)
+        
+        if found_keywords:
+            print(f"🎯 НАЙДЕНО СООБЩЕНИЕ С КЛЮЧЕВЫМИ СЛОВАМИ!")
+            print(f"📅 Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"🔍 Найдены слова: {', '.join(found_keywords)}")
+            print(f"📝 Текст: {text[:200]}...")
+            print("-" * 60)
+            
+            # Пересылаем сообщение
+            await self.forward_message(message, found_keywords)
         else:
-            author_info = f"👤 {sender.first_name or ''} {sender.last_name or ''} (ID: {sender.id})"
-    else:
-        author_info = "👤 Неизвестный отправитель"
+            # Логируем все сообщения для отладки
+            print(f"📨 Новое сообщение: {text[:100]}...")
 
-    # Определяем тип чата и создаем ссылку
-    if hasattr(chat, 'title'):
-        # Это канал/группа
-        chat_name = chat.title
-        message_link = f"https://t.me/c/{str(chat.id).replace('-100', '')}/{message.id}"
-        source_info = f"📅 Канал: {chat_name}"
-    else:
-        # Это личное сообщение
-        chat_name = f"{chat.first_name or ''} {chat.last_name or ''}".strip()
-        message_link = f"tg://openmessage?user_id={chat.id}&message_id={message.id}"
-        source_info = f"💬 Личное сообщение от: {chat_name}"
+    def extract_message_text(self, message: Message) -> str:
+        """Извлекаем текст из сообщения"""
+        text = ""
+        
+        if message.text:
+            text = message.text
+        elif message.caption:
+            text = message.caption
+        
+        return text.lower().strip()
 
-    # Создаем информационное сообщение
-    caption = (
-        f"🔔 **Найдено совпадение!**\n\n"
-        f"{author_info}\n"
-        f"{source_info}\n"
-        f"🔗 [Перейти к сообщению]({message_link})\n"
-        f"⏰ {message.date.strftime('%d.%m.%Y %H:%M')}\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-    )
+    def check_keywords(self, text: str) -> list:
+        """Проверяем текст на наличие ключевых слов"""
+        found = []
+        for keyword in self.keywords:
+            # Используем regex для поиска целых слов
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            if re.search(pattern, text, re.IGNORECASE):
+                found.append(keyword)
+        return found
 
-    try:
-        # Если есть медиа
-        if message.media:
-            if message.text:
-                caption += f"\n{message.text}"
+    async def forward_message(self, message: Message, keywords: list):
+        """Пересылаем найденное сообщение"""
+        try:
+            if self.my_channel:
+                # Создаем заголовок с ключевыми словами
+                caption = f"🎯 Найдены ключевые слова: {', '.join(keywords)}\n"
+                caption += f"📅 Время: {datetime.now().strftime('%H:%M:%S')}\n"
+                caption += f"🔗 Источник: {self.target_channel}"
+                
+                # Пересылаем сообщение
+                await message.forward(
+                    self.my_channel,
+                    caption=caption
+                )
+                print(f"✅ Сообщение переслано в {self.my_channel}")
+            else:
+                # Если свой канал не указан, пересылаем себе
+                await message.forward("me")
+                print("✅ Сообщение переслано в избранное")
+                
+        except Exception as e:
+            print(f"❌ Ошибка пересылки: {e}")
 
-            await client.send_message(
-                my_channel,
-                caption,
-                file=message.media,
-                link_preview=False
-            )
-        else:
-            # Если только текст
-            caption += f"\n{message.text}"
-            await client.send_message(
-                my_channel,
-                caption,
-                link_preview=False
-            )
-
-        print(f"✅ Сообщение переслано от: {chat_name}")
-
-    except Exception as e:
-        # Если не удалось переслать медиа
-        error_message = (
-            f"{caption}\n\n"
-            f"📄 **Текст:**\n{message.text or 'Нет текста'}\n\n"
-            f"⚠️ *Не удалось переслать вложения*\n"
-            f"🔗 [Открыть оригинал]({message_link})"
-        )
-        await client.send_message(my_channel, error_message)
-        print(f"⚠️ Ошибка пересылки от {chat_name}: {e}")
-
-@client.on(events.NewMessage)
-async def handler(event):
-    """Обработчик ВСЕХ новых сообщений"""
-    try:
-        chat = await event.get_chat()
-        message_text = event.message.text or ""
-
-        # Определяем откуда сообщение
-        if hasattr(chat, 'title'):
-            # Это канал/группа
-            chat_name = chat.title
-            chat_username = f"@{chat.username}" if hasattr(chat, 'username') and chat.username else chat_name
-
-            # Проверяем, что сообщение из нужного канала
-            if chat_username in target_channels or chat_name in target_channels:
-                # Проверяем ключевые слова
-                if any(keyword in message_text.lower() for keyword in keywords):
-                    print(f"🔍 Найдено ключевое слово в канале: {chat_name}")
-                    await forward_complete_message(event)
-        else:
-            # Это личное сообщение от пользователя
-            chat_name = f"{chat.first_name or ''} {chat.last_name or ''}".strip()
-
-            # Проверяем ключевые слова в личных сообщениях
-            if any(keyword in message_text.lower() for keyword in keywords):
-                print(f"🔍 Найдено ключевое слово в ЛС от: {chat_name}")
-                await forward_complete_message(event)
-
-    except Exception as e:
-        print(f"❌ Ошибка обработки сообщения: {e}")
-
-# Flask для поддержания активности
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "✅ Telegram Monitor is running!"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
+    async def get_recent_messages(self, app, limit=10):
+        """Получаем последние сообщения для проверки (опционально)"""
+        try:
+            print(f"🔍 Проверяем последние {limit} сообщений...")
+            async for message in app.get_chat_history(self.target_channel, limit=limit):
+                await self.process_message(message)
+        except Exception as e:
+            print(f"❌ Ошибка получения истории: {e}")
 
 async def main():
-    await client.start(phone)
+    monitor = TelegramMonitor()
+    await monitor.start()
 
-    # Проверяем доступ к каналам
-    print("🚀 Мониторинг запущен!")
-    print(f"📊 Ключевые слова: {keywords}")
-    print(f"📺 Отслеживаемые каналы: {target_channels}")
-    print("💬 Также мониторятся ЛИЧНЫЕ СООБЩЕНИЯ от пользователей")
-
-    for channel in target_channels:
-        if channel:
-            try:
-                entity = await client.get_entity(channel)
-                if hasattr(entity, 'title'):
-                    print(f"✅ Доступ к каналу: {entity.title}")
-                else:
-                    print(f"✅ Доступ к пользователю: {entity.first_name}")
-            except Exception as e:
-                print(f"❌ Нет доступа к {channel}: {e}")
-
-    await client.run_until_disconnected()
-
-if __name__ == '__main__':
-    # Запускаем Flask в фоне
-    flask_thread = Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-
-    # Запускаем Telethon
+if __name__ == "__main__":
+    print("🚀 Запуск Telegram монитора...")
+    print("=" * 50)
     asyncio.run(main())
-
