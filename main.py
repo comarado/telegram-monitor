@@ -1,6 +1,7 @@
 import os
 import asyncio
 import re
+import sys
 from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -10,6 +11,9 @@ load_dotenv()
 
 class TelegramMonitor:
     def __init__(self):
+        # Проверяем все обязательные переменные
+        self.check_environment_variables()
+        
         self.api_id = int(os.getenv('APL_ID'))
         self.api_hash = os.getenv('APL_HASH')
         self.session_string = os.getenv('SESSION_STRING')
@@ -21,15 +25,37 @@ class TelegramMonitor:
         # Очищаем и форматируем ключевые слова
         self.keywords = [kw.strip().lower() for kw in self.keywords if kw.strip()]
         
-        print("🔧 Инициализация монитора...")
+        print("=" * 60)
+        print("🔧 Инициализация Telegram монитора...")
         print(f"🎯 Целевой канал: {self.target_channel}")
         print(f"📤 Мой канал: {self.my_channel}")
-        print(f"🔍 Ключевые слова: {', '.join(self.keywords)}")
+        print(f"🔍 Ключевые слова: {', '.join(self.keywords) if self.keywords else 'НЕТ'}")
         print(f"📞 Телефон: {self.phone}")
+        print("=" * 60)
+
+    def check_environment_variables(self):
+        """Проверяем наличие всех обязательных переменных окружения"""
+        required_vars = ['APL_ID', 'APL_HASH', 'SESSION_STRING', 'TARGET_CHANNEL']
+        missing_vars = []
+        
+        for var in required_vars:
+            value = os.getenv(var)
+            if not value:
+                missing_vars.append(var)
+            else:
+                print(f"✅ {var}: {'*' * len(value)}")  # Показываем звездочки вместо реальных значений
+        
+        if missing_vars:
+            print(f"❌ Отсутствуют обязательные переменные: {', '.join(missing_vars)}")
+            print("📝 Убедитесь, что в Render добавлены все переменные окружения:")
+            print("   - APL_ID, APL_HASH, SESSION_STRING, TARGET_CHANNEL")
+            sys.exit(1)
 
     async def start(self):
         """Запуск мониторинга"""
         try:
+            print("🚀 Запускаем мониторинг...")
+            
             async with Client(
                 "monitor_session",
                 api_id=self.api_id,
@@ -45,7 +71,7 @@ class TelegramMonitor:
                 # Регистрируем обработчики
                 await self.setup_handlers(app)
                 
-                print("🚀 Мониторинг запущен! Ожидаем новые сообщения...")
+                print("🎉 Мониторинг запущен! Ожидаем новые сообщения...")
                 print("=" * 60)
                 
                 # Бесконечный цикл для поддержания работы
@@ -53,7 +79,8 @@ class TelegramMonitor:
                 
         except Exception as e:
             print(f"❌ Ошибка при запуске: {e}")
-            await asyncio.sleep(10)  # Ждем перед повторной попыткой
+            print("🔄 Перезапуск через 10 секунд...")
+            await asyncio.sleep(10)
             await self.start()  # Перезапускаем
 
     async def check_channels(self, app):
@@ -67,9 +94,15 @@ class TelegramMonitor:
             if self.my_channel:
                 my_chat = await app.get_chat(self.my_channel)
                 print(f"✅ Доступ к моему каналу: {my_chat.title}")
+            else:
+                print("ℹ️ Мой канал не указан, сообщения будут пересылаться в избранное")
                 
         except Exception as e:
             print(f"❌ Ошибка доступа к каналу: {e}")
+            print("⚠️ Убедитесь, что:")
+            print("   - Канал существует")
+            print("   - Вы подписаны на канал")
+            print("   - Username канала правильный (начинается с @)")
             raise
 
     async def setup_handlers(self, app):
@@ -91,6 +124,9 @@ class TelegramMonitor:
         if not text:
             return
             
+        # Логируем все сообщения для отладки
+        print(f"📨 Новое сообщение: {text[:100]}{'...' if len(text) > 100 else ''}")
+        
         # Проверяем на ключевые слова
         found_keywords = self.check_keywords(text)
         
@@ -103,9 +139,6 @@ class TelegramMonitor:
             
             # Пересылаем сообщение
             await self.forward_message(message, found_keywords)
-        else:
-            # Логируем все сообщения для отладки
-            print(f"📨 Новое сообщение: {text[:100]}...")
 
     def extract_message_text(self, message: Message) -> str:
         """Извлекаем текст из сообщения"""
@@ -120,6 +153,9 @@ class TelegramMonitor:
 
     def check_keywords(self, text: str) -> list:
         """Проверяем текст на наличие ключевых слов"""
+        if not self.keywords:
+            return []
+            
         found = []
         for keyword in self.keywords:
             # Используем regex для поиска целых слов
@@ -151,23 +187,16 @@ class TelegramMonitor:
         except Exception as e:
             print(f"❌ Ошибка пересылки: {e}")
 
-    async def get_recent_messages(self, app, limit=10):
-        """Получаем последние сообщения для проверки (опционально)"""
-        try:
-            print(f"🔍 Проверяем последние {limit} сообщений...")
-            async for message in app.get_chat_history(self.target_channel, limit=limit):
-                await self.process_message(message)
-        except Exception as e:
-            print(f"❌ Ошибка получения истории: {e}")
-
 async def main():
-    monitor = TelegramMonitor()
-    await monitor.start()
+    try:
+        monitor = TelegramMonitor()
+        await monitor.start()
+    except KeyboardInterrupt:
+        print("\n🛑 Мониторинг остановлен пользователем")
+    except Exception as e:
+        print(f"💥 Критическая ошибка: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     print("🚀 Запуск Telegram монитора...")
-    print("=" * 50)
     asyncio.run(main())
-
-
-
