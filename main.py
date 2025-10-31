@@ -1,46 +1,59 @@
 import os
-from telethon import TelegramClient, events
-from telethon.sessions import StringSession
-from keep_alive import keep_alive
+import asyncio
+from pyrogram import Client, filters
+from dotenv import load_dotenv
 
-# 🔹 Получаем данные из переменных окружения Render
-api_id = int(os.getenv("API_ID"))
-api_hash = os.getenv("API_HASH")
-bot_token = os.getenv("BOT_TOKEN")
-session_string = os.getenv("SESSION_STRING")
-my_chat_id = os.getenv("MY_CHAT_ID")  # может быть ID или @username
-keywords = os.getenv("KEYWORDS", "").split(",")  # например: макбук,айфон,ps5
+load_dotenv()
 
-# 🔹 Запускаем Flask-сервер для Render
-keep_alive()
+async def generate_and_exit():
+    """Генерирует session_string и завершает работу"""
+    print("🔐 Генерация session_string...")
+    
+    async with Client(
+        "session_generator",
+        api_id=int(os.getenv("API_ID")),
+        api_hash=os.getenv("API_HASH")
+    ) as app:
+        session_string = await app.export_session_string()
+        
+        print("\n" + "="*60)
+        print("✅ SESSION_STRING УСПЕШНО СГЕНЕРИРОВАН!")
+        print("="*60)
+        print(session_string)
+        print("="*60)
+        print("\n⚠️ Скопируйте эту строку и добавьте в Render как SESSION_STRING")
+        print("Затем перезапустите сервис без параметра GENERATE_SESSION")
+        
+    # Завершаем работу после генерации
+    return session_string
 
-# 🔹 Подключаемся к Telegram
-if bot_token:
-    print("🤖 Запускаем через бот-токен...")
-    client = TelegramClient("bot", api_id, api_hash).start(bot_token=bot_token)
-elif session_string:
-    print("👤 Запускаем через session string...")
-    client = TelegramClient(StringSession(session_string), api_id, api_hash)
-    client.start()
-else:
-    raise ValueError("❌ Не найден BOT_TOKEN или SESSION_STRING в окружении!")
+async def main_app():
+    """Основной рабочий режим"""
+    async with Client(
+        "my_account",
+        api_id=int(os.getenv("API_ID")),
+        api_hash=os.getenv("API_HASH"),
+        session_string=os.getenv("SESSION_STRING")
+    ) as app:
+        print("✅ Бот запущен в рабочем режиме!")
+        
+        @app.on_message(filters.chat("@MagicSchoolBA"))
+        async def handle_magic_school(client, message):
+            await message.forward("me")
+            print(f"📨 Получено сообщение: {message.text}")
+        
+        await asyncio.Future()
 
-# 🔹 Функция отправки сообщений себе
-async def send_to_me(text):
-    try:
-        await client.send_message(my_chat_id, text)
-    except Exception as e:
-        print(f"Ошибка при отправке сообщения: {e}")
+async def main():
+    # Проверяем, нужно ли генерировать сессию
+    if os.getenv("GENERATE_SESSION") == "true":
+        await generate_and_exit()
+    else:
+        if not os.getenv("SESSION_STRING"):
+            print("❌ SESSION_STRING не найден!")
+            print("Добавьте переменную GENERATE_SESSION=true для генерации")
+            return
+        await main_app()
 
-# 🔹 Мониторинг сообщений с ключевыми словами
-@client.on(events.NewMessage)
-async def handler(event):
-    text = event.raw_text.lower()
-    for kw in keywords:
-        if kw.strip().lower() in text:
-            msg = f"🔎 Совпадение по ключевому слову «{kw.strip()}»:\n\n{text}\n\n👉 {event.message.link if event.message else ''}"
-            await send_to_me(msg)
-            break
-
-print("🚀 Telegram монитор запущен…")
-client.run_until_disconnected()
+if __name__ == "__main__":
+    asyncio.run(main())
