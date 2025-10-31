@@ -3,5 +3,20 @@ services:
     name: telegram-monitor
     env: python
     plan: free
-    buildCommand: ""
-    startCommand: "python main.py"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: APL_ID
+        value: your_api_id_here
+      - key: APL_HASH  
+        value: your_api_hash_here
+      - key: SESSION_STRING
+        value: your_session_string_here
+      - key: TARGET_CHANNEL
+        value: your_target_channel_here
+      - key: MY_CHANNEL
+        value: your_my_channel_here
+      - key: KEYWORDS
+        value: keyword1,keyword2,keyword3
+      - key: PHONE
+        value: your_phone_number_here
