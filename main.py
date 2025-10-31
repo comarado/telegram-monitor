@@ -4,9 +4,9 @@ import re
 from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from dotenv import load_dotenv
+№from dotenv import load_dotenv
 
-load_dotenv()
+#load_dotenv()
 
 class TelegramMonitor:
     def __init__(self):
@@ -168,3 +168,4 @@ if __name__ == "__main__":
     print("🚀 Запуск Telegram монитора...")
     print("=" * 50)
     asyncio.run(main())
+
