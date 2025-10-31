@@ -14,8 +14,8 @@ class TelegramMonitor:
         # Проверяем все обязательные переменные
         self.check_environment_variables()
         
-        self.api_id = int(os.getenv('APL_ID'))
-        self.api_hash = os.getenv('APL_HASH')
+        self.api_id = int(os.getenv('API_ID'))
+        self.api_hash = os.getenv('API_HASH')
         self.session_string = os.getenv('SESSION_STRING')
         self.target_channel = os.getenv('TARGET_CHANNEL')
         self.my_channel = os.getenv('MY_CHANNEL')
@@ -35,7 +35,7 @@ class TelegramMonitor:
 
     def check_environment_variables(self):
         """Проверяем наличие всех обязательных переменных окружения"""
-        required_vars = ['APL_ID', 'APL_HASH', 'SESSION_STRING', 'TARGET_CHANNEL']
+        required_vars = ['API_ID', 'API_HASH', 'SESSION_STRING', 'TARGET_CHANNEL']
         missing_vars = []
         
         for var in required_vars:
@@ -48,7 +48,7 @@ class TelegramMonitor:
         if missing_vars:
             print(f"❌ Отсутствуют обязательные переменные: {', '.join(missing_vars)}")
             print("📝 Убедитесь, что в Render добавлены все переменные окружения:")
-            print("   - APL_ID, APL_HASH, SESSION_STRING, TARGET_CHANNEL")
+            print("   - API_ID, API_HASH, SESSION_STRING, TARGET_CHANNEL")
             sys.exit(1)
 
     async def start(self):
@@ -200,3 +200,4 @@ async def main():
 if __name__ == "__main__":
     print("🚀 Запуск Telegram монитора...")
     asyncio.run(main())
+
