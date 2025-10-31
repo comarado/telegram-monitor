@@ -11,7 +11,7 @@ api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 session_name = "monitor"
 target_chat = os.getenv("TARGET_CHAT")  # ID или username канала для мониторинга
-my_chat_id = int(os.getenv("MY_CHAT_ID"))  # куда присылать совпадения
+my_chat_id = os.getenv("MY_CHAT_ID")  # куда присылать совпадения
 keywords = [x.strip().lower() for x in os.getenv("KEYWORDS", "макбук,iphone,айфон").split(",")]
 
 # === Flask для keep-alive ===
@@ -43,4 +43,5 @@ async def handler(event):
 print("🚀 Telegram монитор запущен…")
 client.start()
 client.run_until_disconnected()
+
 
