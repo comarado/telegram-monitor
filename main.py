@@ -1,47 +1,46 @@
-from keep_alive import keep_alive
-keep_alive()
-from telethon import TelegramClient, events
-from flask import Flask
-from threading import Thread
-import requests
 import os
+from telethon import TelegramClient, events
+from telethon.sessions import StringSession
+from keep_alive import keep_alive
 
-# === Настройки окружения ===
+# 🔹 Получаем данные из переменных окружения Render
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
-session_name = "monitor"
-target_chat = os.getenv("TARGET_CHAT")  # ID или username канала для мониторинга
-my_chat_id = os.getenv("MY_CHAT_ID")  # куда присылать совпадения
-keywords = [x.strip().lower() for x in os.getenv("KEYWORDS", "макбук,iphone,айфон").split(",")]
+bot_token = os.getenv("BOT_TOKEN")
+session_string = os.getenv("SESSION_STRING")
+my_chat_id = os.getenv("MY_CHAT_ID")  # может быть ID или @username
+keywords = os.getenv("KEYWORDS", "").split(",")  # например: макбук,айфон,ps5
 
-# === Flask для keep-alive ===
-app = Flask(__name__)
+# 🔹 Запускаем Flask-сервер для Render
+keep_alive()
 
-@app.route('/')
-def home():
-    return "✅ Telegram monitor is running!"
+# 🔹 Подключаемся к Telegram
+if bot_token:
+    print("🤖 Запускаем через бот-токен...")
+    client = TelegramClient("bot", api_id, api_hash).start(bot_token=bot_token)
+elif session_string:
+    print("👤 Запускаем через session string...")
+    client = TelegramClient(StringSession(session_string), api_id, api_hash)
+    client.start()
+else:
+    raise ValueError("❌ Не найден BOT_TOKEN или SESSION_STRING в окружении!")
 
-def run_web():
-    app.run(host='0.0.0.0', port=8080)
+# 🔹 Функция отправки сообщений себе
+async def send_to_me(text):
+    try:
+        await client.send_message(my_chat_id, text)
+    except Exception as e:
+        print(f"Ошибка при отправке сообщения: {e}")
 
-Thread(target=run_web).start()
-
-# === Telegram Client ===
-client = TelegramClient(session_name, api_id, api_hash)
-
-@client.on(events.NewMessage(chats=target_chat))
+# 🔹 Мониторинг сообщений с ключевыми словами
+@client.on(events.NewMessage)
 async def handler(event):
-    text = event.message.message.lower()
-    if any(k in text for k in keywords):
-        msg = f"🔍 Найдено совпадение:\n\n{text}"
-        print(msg)
-        try:
-            await client.send_message(my_chat_id, msg)
-        except Exception as e:
-            print("Ошибка отправки:", e)
+    text = event.raw_text.lower()
+    for kw in keywords:
+        if kw.strip().lower() in text:
+            msg = f"🔎 Совпадение по ключевому слову «{kw.strip()}»:\n\n{text}\n\n👉 {event.message.link if event.message else ''}"
+            await send_to_me(msg)
+            break
 
 print("🚀 Telegram монитор запущен…")
-client.start()
 client.run_until_disconnected()
-
-
